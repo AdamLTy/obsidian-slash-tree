@@ -1,5 +1,5 @@
 import { App, Editor, Modal, Notice, Plugin, PluginSettingTab, Setting } from "obsidian";
-import { DEFAULT_NULL_TOKENS, LevelOrderMode, TreeError, formatTreeError, textToTree } from "./tree";
+import { DEFAULT_NULL_TOKENS, LevelOrderMode, TreeError, TreeFormat, detectFormat, formatTreeError, textToTree } from "./tree";
 import { Lang, STRINGS, Strings, TREE_ERROR_MESSAGES, detectLang } from "./i18n";
 
 interface SlashTreeSettings {
@@ -155,11 +155,19 @@ class TreeInputModal extends Modal {
       cls: "slash-tree-input",
       attr: { rows: "7", placeholder: t.modalPlaceholder },
     });
+    const formatEl = contentEl.createDiv({ cls: "slash-tree-format" });
     const preview = contentEl.createEl("pre", { cls: "slash-tree-pre slash-tree-preview" });
     const error = contentEl.createDiv({ cls: "slash-tree-error" });
+    const formatNames: Record<TreeFormat, string> = {
+      array: t.formatArray,
+      levels: t.formatLevels,
+      edges: t.formatEdges,
+      outline: t.formatOutline,
+    };
 
     const update = () => {
       const text = input.value;
+      formatEl.setText(text.trim() ? t.formatLabel + formatNames[detectFormat(text)] : "");
       try {
         this.tree = text.trim() ? this.plugin.convert(text) : "";
         preview.setText(this.tree);

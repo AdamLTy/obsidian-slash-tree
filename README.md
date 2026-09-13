@@ -2,7 +2,7 @@
 
 **English** | [简体中文](README.zh-CN.md)
 
-Turn a fixed-format text into a slash-style binary tree drawing with one command. Built for algorithm notes: the input is a LeetCode-style level-order array or an indented list, and the output is the `/` `\` tree you would sketch by hand, not a `├──` directory tree.
+Turn a fixed-format text into a slash-style binary tree drawing with one command. Built for algorithm notes: the input is one line per level, `parent: left right` lines, a LeetCode-style level-order array, or an indented list, and the output is the `/` `\` tree you would sketch by hand, not a `├──` directory tree.
 
 ```
 [3,9,20,null,null,15,7]      →        3
@@ -16,7 +16,44 @@ Slashes are strict 45° diagonals, every parent is centered over its children, a
 
 ## Input formats
 
-### 1. Level-order array (LeetCode style)
+The format is detected automatically. Pick whichever feels natural; the input dialog shows which one it recognised.
+
+### 1. Levels, one line per level (recommended)
+
+Write the root on the first line, then each level on its own line. Use `|` to group the children by parent, in the same order as the previous line, and `_` for an empty slot.
+
+```
+3
+9 20
+_ | 15 7
+```
+
+- Line 3 has two groups: the children of `9` (none) and the children of `20` (`15 7`).
+- A group holds at most two values, `left right`. `_ 7` means right child only, `15` alone means left child only, and an empty group means no children.
+- Every parent gets exactly one group, so a wrong count is reported immediately, with the parents listed, instead of silently shifting the tree.
+- Without `|`, a line must contain exactly two values per parent, like a LeetCode array: `4 5 _ 6`.
+
+A bigger example, `[5,4,8,11,null,13,4,7,2,null,null,null,1]`:
+
+```
+5
+4 8
+11 _ | 13 4
+7 2 | | _ 1
+```
+
+### 2. Parent and children
+
+One line per node that has children: `parent: left right`. The first line's parent is the root; every later parent must already appear as a child on an earlier line. Leaves are simply not mentioned.
+
+```
+3: 9 20
+20: 15 7
+```
+
+If several nodes share a label, each line refers to the first such node, in order of appearance, that has not been given children yet, so writing lines level by level does the right thing.
+
+### 3. Level-order array (LeetCode style)
 
 ```
 [1,2,3,null,4]
@@ -28,7 +65,7 @@ Slashes are strict 45° diagonals, every parent is centered over its children, a
 - Empty slots are `null` / `None` / `nil` / `#` / `_` (case-insensitive, configurable). An empty string also counts as an empty slot.
 - By default the array is read the LeetCode way: an empty slot does not reserve positions for its children. Switch to **heap** mode in settings to use fixed indices (`2i+1`, `2i+2`).
 
-### 2. Indented list
+### 4. Indented list
 
 ```
 1

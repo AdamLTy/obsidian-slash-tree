@@ -10,6 +10,9 @@ const samples = [
   "[1,null,2,null,3,null,4]",
   "[100,20,3000,1,null,null,45]",
   "- 根\n  - 左\n    - 左左\n    - 左右\n  - 右\n    - null\n    - 右右",
+  "3\n9 20\n_ | 15 7",
+  "5\n4 8\n11 _ | 13 4\n7 2 | | _ 1",
+  "3: 9 20\n20: 15 7",
 ];
 
 for (const s of samples) {

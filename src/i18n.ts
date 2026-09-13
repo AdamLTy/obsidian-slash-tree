@@ -14,6 +14,11 @@ export interface Strings {
   modalTitle: string;
   modalPlaceholder: string;
   insertButton: string;
+  formatLabel: string;
+  formatArray: string;
+  formatLevels: string;
+  formatEdges: string;
+  formatOutline: string;
   gapName: string;
   gapDesc: string;
   nullName: string;
@@ -38,8 +43,14 @@ const en: Strings = {
   noticeNothingToInsert: "Nothing to insert yet. Enter a valid tree first",
   copy: "Copy",
   modalTitle: "Generate slash tree",
-  modalPlaceholder: "Level-order array: [3,9,20,null,null,15,7]\n\nor an indented list:\n1\n  2\n    4\n    5\n  3",
+  modalPlaceholder:
+    'One line per level, "|" groups children by parent, "_" = empty:\n3\n9 20\n_ | 15 7\n\nAlso accepted: "20: 15 7" (parent: left right), [3,9,20,null,null,15,7], indented list',
   insertButton: "Insert at cursor (⌘/Ctrl+Enter)",
+  formatLabel: "Format: ",
+  formatArray: "level-order array",
+  formatLevels: "levels (one line per level)",
+  formatEdges: "parent: left right",
+  formatOutline: "indented list",
   gapName: "Minimum subtree gap",
   gapDesc: "How many blank columns to keep between adjacent subtrees. Larger is looser (default 1).",
   nullName: "Null tokens",
@@ -64,8 +75,14 @@ const zh: Strings = {
   noticeNothingToInsert: "还没有可插入的树，请先输入正确的格式",
   copy: "复制",
   modalTitle: "生成斜杠树",
-  modalPlaceholder: "层序数组：[3,9,20,null,null,15,7]\n\n或缩进列表：\n1\n  2\n    4\n    5\n  3",
+  modalPlaceholder:
+    "每行一层，用 | 按父节点分组，_ 表示空位：\n3\n9 20\n_ | 15 7\n\n也支持：「20: 15 7」（父节点: 左 右）、[3,9,20,null,null,15,7]、缩进列表",
   insertButton: "插入到光标处（⌘/Ctrl+Enter）",
+  formatLabel: "格式：",
+  formatArray: "层序数组",
+  formatLevels: "层级（每行一层）",
+  formatEdges: "父子（父节点: 左 右）",
+  formatOutline: "缩进列表",
   gapName: "子树最小间距",
   gapDesc: "相邻两棵子树之间至少留几列空格，越大越疏松（默认 1）。",
   nullName: "空节点写法",
@@ -89,6 +106,17 @@ const zhErrors: TreeErrorMessages = {
   multiple_roots: (p) => `第 ${p.line} 行：只能有一个根节点（缩进是否少了？）`,
   side_taken: (p) => `第 ${p.line} 行：「${p.label}」的${p.side === "L" ? "左" : "右"}孩子已经存在`,
   too_many_children: (p) => `第 ${p.line} 行：「${p.label}」已经有两个孩子了，二叉树最多两个`,
+  level_multi_root: (p) => `第 ${p.line} 行：第一行是根节点，只能有 1 个值（实际 ${p.actual} 个）`,
+  level_no_parents: (p) => `第 ${p.line} 行：上一层已经没有节点了，这一层不应存在`,
+  level_group_count: (p) => `第 ${p.line} 行：上一层有 ${p.expected} 个节点（${p.parents}），需要用 | 分成 ${p.expected} 组（实际 ${p.actual} 组）`,
+  level_token_count: (p) =>
+    `第 ${p.line} 行：上一层有 ${p.expected} 个节点（${p.parents}），不用 | 分组时必须正好写 ${(p.expected ?? 0) * 2} 个值（每个父节点 2 个，空位写 _），实际 ${p.actual} 个。建议用 | 按父节点分组`,
+  level_group_size: (p) => `第 ${p.line} 行第 ${p.group} 组（「${p.label}」的孩子）有 ${p.actual} 个值，最多 2 个（左 右）`,
+  edge_no_colon: (p) => `第 ${p.line} 行：格式应为「父节点: 左 右」`,
+  edge_no_parent_label: (p) => `第 ${p.line} 行：冒号前缺少父节点`,
+  edge_unknown_parent: (p) => `第 ${p.line} 行：「${p.label}」还没有出现在树里；父节点必须先在前面的行里作为孩子出现（第一行的父节点是根）`,
+  edge_parent_taken: (p) => `第 ${p.line} 行：所有叫「${p.label}」的节点都已经指定过孩子了`,
+  edge_children_count: (p) => `第 ${p.line} 行：「${p.label}」后面有 ${p.actual} 个值，最多 2 个（左 右）`,
 };
 
 export const STRINGS: Record<Lang, Strings> = { en, zh };

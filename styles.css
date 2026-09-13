@@ -42,6 +42,13 @@
   margin-bottom: var(--size-4-2);
 }
 
+.slash-tree-modal .slash-tree-format {
+  color: var(--text-muted);
+  font-size: var(--font-ui-smaller);
+  margin-bottom: var(--size-4-1);
+  min-height: 1.2em;
+}
+
 .slash-tree-modal .slash-tree-preview {
   min-height: 5em;
   margin-bottom: var(--size-4-2);

@@ -1,6 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
+  detectFormat,
   textToTree,
   parseTree,
   renderTree,
@@ -99,7 +100,7 @@ test("错误码与参数", () => {
   throwsCode(() => t("[1,null,null,2]"), "orphan_value", { index: 4, value: "2" });
   throwsCode(() => t("[1,null,2,3]", { levelOrderMode: "heap" }), "heap_null_parent", { index: 4, parentIndex: 2 });
   throwsCode(() => t("1\n  2\n  3\n  4"), "too_many_children", { line: 4, label: "1" });
-  throwsCode(() => t("1\n2"), "multiple_roots", { line: 2 });
+  throwsCode(() => t("1\n  2\n3"), "multiple_roots", { line: 3 });
   throwsCode(() => t("1\n  R: 2\n  R: 3"), "side_taken", { line: 3, side: "R" });
   throwsCode(() => t("1\n  null\n    2"), "placeholder_child", { line: 3 });
   throwsCode(() => t("null\n  1"), "root_null", { line: 1 });
@@ -175,6 +176,105 @@ test("随机树：斜线两端都有内容，标签之间至少隔一列", () =>
     const tokensInText = text.split("\n").flatMap((l) => l.split(/[\s/\\]+/).filter(Boolean));
     assert.deepEqual(tokensInText.sort(), labels.sort(), `seed ${seed}: 标签粘连或丢失\n${text}`);
     assert.equal(countNodes(root), labels.length);
+  }
+});
+
+// ---- 层级格式 ----
+
+test("层级格式：每行一层，| 按父节点分组", () => {
+  assert.equal(t("3\n9 20\n_ | 15 7"), t("[3,9,20,null,null,15,7]"));
+  assert.equal(t("3\n9 20\n| 15 7"), t("[3,9,20,null,null,15,7]")); // 空组 = 叶子
+  assert.equal(t("1\n2 3\n4 5 | 6 7"), t("[1,2,3,4,5,6,7]"));
+  assert.equal(t("1\n2 3\n4 5 _ 6"), t("[1,2,3,4,5,null,6]")); // 不分组：每个父节点正好 2 个
+  assert.equal(t("1\n_ 2\n3"), t("[1,null,2,3]")); // 上一层只有 1 个节点时可只写 1 个
+  assert.equal(t("1\n2 3\n4 |"), t("[1,2,3,4]")); // 尾部空组
+  assert.equal(t("1\n2, 3\n4, 5 | , 6"), t("[1,2,3,4,5,null,6]")); // 逗号分隔，空项 = 空位
+  assert.equal(t("- 1\n- 2 3"), t("[1,2,3]")); // 列表项
+  assert.equal(t("    1\n    2 3"), t("[1,2,3]")); // 公共缩进会被去掉
+  assert.equal(t("5\n4 8\n11 _ | 13 4\n7 2 | | _ 1"), t("[5,4,8,11,null,13,4,7,2,null,null,null,1]"));
+});
+
+test("层级格式：错误码带上一层节点提示", () => {
+  throwsCode(() => t("1 2\n3 4"), "level_multi_root", { line: 1, actual: 2 });
+  throwsCode(() => t("1\n2 3\n4 5"), "level_token_count", { line: 3, expected: 2, actual: 2, parents: "2, 3" });
+  throwsCode(() => t("1\n2 3\n4 5 | 6 | 7"), "level_group_count", { line: 3, expected: 2, actual: 3, parents: "2, 3" });
+  throwsCode(() => t("1\n2 3\n4 5 6 | 7"), "level_group_size", { line: 3, group: 1, label: "2", actual: 3 });
+  throwsCode(() => t("1\n2 3 4"), "level_group_size", { line: 2, group: 1, label: "1", actual: 3 });
+  throwsCode(() => t("1\n_ _\n5"), "level_no_parents", { line: 3 });
+  throwsCode(() => t("_\n1 2"), "root_null", { line: 1 });
+});
+
+// ---- 父子格式 ----
+
+test("父子格式：父节点: 左 右", () => {
+  assert.equal(t("3: 9 20\n20: 15 7"), t("[3,9,20,null,null,15,7]"));
+  assert.equal(t("3: 9 20\n20: _ 7"), t("[3,9,20,null,null,null,7]"));
+  assert.equal(t("3: 9"), t("[3,9]"));
+  assert.equal(t("3:"), t("[3]"));
+  assert.equal(t("a：b c"), t("[a,b,c]")); // 全角冒号
+  assert.equal(t("- 3: 9, 20\n- 20: 15, 7"), t("[3,9,20,null,null,15,7]"));
+  // 同名节点：按出现顺序取第一个还没指定过孩子的
+  assert.equal(t("1: 1 1\n1: 2 3"), t("[1,1,1,2,3]"));
+  assert.equal(t("1: 1 1\n1: 2 3\n1: 4"), t("[1,1,1,2,3,4]"));
+});
+
+test("父子格式：错误码", () => {
+  throwsCode(() => t("3: 9 20\n21: 1"), "edge_unknown_parent", { line: 2, label: "21" });
+  throwsCode(() => t("3: 9 20\n3: 1"), "edge_parent_taken", { line: 2, label: "3" });
+  throwsCode(() => t("3: 9 20 21"), "edge_children_count", { line: 1, label: "3", actual: 3 });
+  throwsCode(() => t("3: 9\n: 1"), "edge_no_parent_label", { line: 2 });
+  throwsCode(() => t("3: 9\n1 2"), "edge_no_colon", { line: 2 });
+  throwsCode(() => t("_: 1 2"), "root_null", { line: 1 });
+});
+
+test("detectFormat 自动识别", () => {
+  assert.equal(detectFormat("[1,2]"), "array");
+  assert.equal(detectFormat("1 2 3"), "array");
+  assert.equal(detectFormat("1"), "array");
+  assert.equal(detectFormat("1\n2 3"), "levels");
+  assert.equal(detectFormat("1: 2 3"), "edges");
+  assert.equal(detectFormat("R: 2 3"), "edges");
+  assert.equal(detectFormat("L: 2 3\nL: 4"), "edges");
+  assert.equal(detectFormat("1\n  2"), "outline");
+  assert.equal(detectFormat("- 1\n  - 2"), "outline");
+  assert.equal(detectFormat("- 1\n  - R: 2"), "outline");
+  assert.equal(detectFormat("```tree\n1\n2 3\n```"), "levels");
+  assert.equal(detectFormat("  1\n  2 3"), "levels");
+});
+
+// ---- 随机树：两种新格式序列化后再解析，结构必须完全一致 ----
+
+function toLevels(root: TreeNode): string {
+  const out = [root.label];
+  let level = [root];
+  for (;;) {
+    const next = level.flatMap((n) => [n.left, n.right].filter((c): c is TreeNode => c !== null));
+    if (next.length === 0) break;
+    out.push(level.map((n) => `${n.left?.label ?? "_"} ${n.right?.label ?? "_"}`).join(" | "));
+    level = next;
+  }
+  return out.join("\n");
+}
+
+function toEdges(root: TreeNode): string {
+  const lines: string[] = [];
+  const queue = [root];
+  while (queue.length > 0) {
+    const n = queue.shift() as TreeNode;
+    if (n.left || n.right) lines.push(`${n.label}: ${n.left?.label ?? "_"} ${n.right?.label ?? "_"}`);
+    if (n.left) queue.push(n.left);
+    if (n.right) queue.push(n.right);
+  }
+  return lines.length > 0 ? lines.join("\n") : `${root.label}:`;
+}
+
+test("随机树：层级格式 / 父子格式往返一致", () => {
+  for (let seed = 1; seed <= 300; seed++) {
+    const rng = lcg(seed);
+    const id = { n: 0 };
+    const root: TreeNode = { label: "R", left: randomTree(rng, 5, id), right: randomTree(rng, 5, id) };
+    assert.deepEqual(parseTree(toLevels(root)), root, `seed ${seed} levels\n${toLevels(root)}`);
+    assert.deepEqual(parseTree(toEdges(root)), root, `seed ${seed} edges\n${toEdges(root)}`);
   }
 });
 

@@ -21,7 +21,17 @@ export type TreeErrorCode =
   | "placeholder_child"
   | "multiple_roots"
   | "side_taken"
-  | "too_many_children";
+  | "too_many_children"
+  | "level_multi_root"
+  | "level_no_parents"
+  | "level_group_count"
+  | "level_token_count"
+  | "level_group_size"
+  | "edge_no_colon"
+  | "edge_no_parent_label"
+  | "edge_unknown_parent"
+  | "edge_parent_taken"
+  | "edge_children_count";
 
 export interface TreeErrorParams {
   line?: number;
@@ -30,6 +40,14 @@ export interface TreeErrorParams {
   parentIndex?: number;
   label?: string;
   side?: "L" | "R";
+  /** 期望数量（层级格式：上一层节点数） */
+  expected?: number;
+  /** 实际数量 */
+  actual?: number;
+  /** 上一层节点标签列表，用于提示 */
+  parents?: string;
+  /** 组序号（从 1 开始） */
+  group?: number;
 }
 
 export type TreeErrorMessages = Record<TreeErrorCode, (p: TreeErrorParams) => string>;
@@ -43,6 +61,19 @@ export const TREE_ERROR_MESSAGES_EN: TreeErrorMessages = {
   multiple_roots: (p) => `Line ${p.line}: only one root is allowed (missing indentation?)`,
   side_taken: (p) => `Line ${p.line}: "${p.label}" already has a ${p.side === "L" ? "left" : "right"} child`,
   too_many_children: (p) => `Line ${p.line}: "${p.label}" already has two children; a binary tree allows at most two`,
+  level_multi_root: (p) => `Line ${p.line}: the first line is the root and must contain exactly one value (found ${p.actual})`,
+  level_no_parents: (p) => `Line ${p.line}: the previous level has no nodes, so this level cannot exist`,
+  level_group_count: (p) =>
+    `Line ${p.line}: the previous level has ${p.expected} node(s) (${p.parents}), so this line needs ${p.expected} group(s) separated by "|" (found ${p.actual})`,
+  level_token_count: (p) =>
+    `Line ${p.line}: the previous level has ${p.expected} nodes (${p.parents}); without "|" this line needs exactly ${(p.expected ?? 0) * 2} values (two per parent, "_" for empty), found ${p.actual}. Tip: use "|" to group children by parent`,
+  level_group_size: (p) => `Line ${p.line}: group ${p.group} (children of "${p.label}") has ${p.actual} values; at most 2 (left right)`,
+  edge_no_colon: (p) => `Line ${p.line}: expected "parent: left right"`,
+  edge_no_parent_label: (p) => `Line ${p.line}: missing the parent label before ":"`,
+  edge_unknown_parent: (p) =>
+    `Line ${p.line}: "${p.label}" is not in the tree yet; a parent must first appear as a child on an earlier line (the first line's parent is the root)`,
+  edge_parent_taken: (p) => `Line ${p.line}: every node labelled "${p.label}" already has its children`,
+  edge_children_count: (p) => `Line ${p.line}: "${p.label}" is followed by ${p.actual} values; at most 2 (left right)`,
 };
 
 export class TreeError extends Error {
@@ -92,24 +123,60 @@ export function stripFence(text: string): string {
   return m ? m[2] : text;
 }
 
-/**
- * 自动识别格式并解析：
- * - 以 `[` 开头，或只有一行：层序数组，如 `[3,9,20,null,null,15,7]`、`1 2 3`
- * - 多行：缩进列表，缩进更深的行是上一层的孩子；第 1 个孩子为左、第 2 个为右，
- *   可用 `L:` / `R:` 显式指定，用空节点 token 占位
- */
-export function parseTree(input: string, opts: ParseOptions = {}): TreeNode {
-  const text = stripFence(input).trim();
-  if (!text) throw new TreeError("empty_input");
+export type TreeFormat = "array" | "levels" | "edges" | "outline";
 
-  const lines = text.split("\n").map((l) => l.replace(/\s+$/, ""));
+const BULLET = /^([-*+]|\d+[.)])(\s+|$)/;
+const SIDE = /^(L|R|左|右)\s*[:：]\s*/i;
+const EDGE = /^(.*?)\s*[:：]\s*(.*)$/;
+
+/** 预处理：去围栏、按行拆分、去掉所有行共同的缩进（tab 视为 4 空格） */
+function prepareLines(input: string): string[] {
+  const text = stripFence(input).replace(/\r\n?/g, "\n");
+  const lines = text.split("\n").map((l) => l.replace(/\t/g, "    ").replace(/\s+$/, ""));
   const nonBlank = lines.filter((l) => l.trim() !== "");
+  if (nonBlank.length === 0) return [];
+  const common = Math.min(...nonBlank.map((l) => l.length - l.trimStart().length));
+  return lines.map((l) => (l.trim() === "" ? "" : l.slice(common)));
+}
 
-  if (text.startsWith("[")) return parseLevelOrder(nonBlank.join(" "), opts);
-  if (nonBlank.length === 1 && !BULLET.test(nonBlank[0].trim())) {
-    return parseLevelOrder(nonBlank[0], opts);
+/**
+ * 识别输入格式：
+ * - array：以 `[` 开头，或只有一行且不是列表项，如 `[3,9,20,null,null,15,7]`、`1 2 3`
+ * - edges：第一行形如 `父节点: 左 右`
+ * - levels：多行、没有缩进，每行一层，`|` 分组
+ * - outline：多行、有缩进，缩进更深的行是上一层的孩子
+ */
+export function detectFormat(input: string): TreeFormat {
+  const lines = prepareLines(input);
+  const nonBlank = lines.filter((l) => l.trim() !== "");
+  if (nonBlank.length === 0) return "array";
+  const first = nonBlank[0].trim();
+  if (first.startsWith("[")) return "array";
+  const firstBody = first.replace(BULLET, "");
+  // 第一行形如 `父: 左 右` 就是父子格式（第一行不可能是缩进格式的 L:/R: 方向标记）
+  const em = firstBody.match(EDGE);
+  if (em && em[1].trim() !== "") return "edges";
+  if (nonBlank.length === 1 && !BULLET.test(first)) return "array";
+  const indented = nonBlank.some((l) => l.length - l.trimStart().length > 0);
+  return indented ? "outline" : "levels";
+}
+
+/** 自动识别格式并解析，见 detectFormat */
+export function parseTree(input: string, opts: ParseOptions = {}): TreeNode {
+  const lines = prepareLines(input);
+  const nonBlank = lines.filter((l) => l.trim() !== "");
+  if (nonBlank.length === 0) throw new TreeError("empty_input");
+
+  switch (detectFormat(input)) {
+    case "array":
+      return parseLevelOrder(nonBlank.join(" "), opts);
+    case "edges":
+      return parseEdges(lines, opts);
+    case "levels":
+      return parseLevels(lines, opts);
+    default:
+      return parseOutline(lines, opts);
   }
-  return parseOutline(lines, opts);
 }
 
 function makeNode(label: string): TreeNode {
@@ -191,13 +258,148 @@ function buildHeap(tokens: (string | null)[]): TreeNode {
   return nodes[0] as TreeNode;
 }
 
-const BULLET = /^([-*+]|\d+[.)])(\s+|$)/;
-const SIDE = /^(L|R|左|右)\s*[:：]\s*/i;
-
 interface Frame {
   indent: number;
   node: TreeNode;
   used: { L: boolean; R: boolean };
+}
+
+/** 把一组孩子拆成 token：含逗号按逗号分（空项 = 空位），否则按空白分 */
+function splitTokens(text: string): string[] {
+  const t = text.trim();
+  if (t === "") return [];
+  return (t.includes(",") ? t.split(",") : t.split(/\s+/)).map((x) => unquote(x.trim()));
+}
+
+interface NumberedLine {
+  text: string;
+  line: number;
+}
+
+function numberedLines(lines: string[]): NumberedLine[] {
+  const out: NumberedLine[] = [];
+  lines.forEach((l, i) => {
+    const text = l.trim().replace(BULLET, "").trim();
+    if (text !== "") out.push({ text, line: i + 1 });
+  });
+  return out;
+}
+
+/**
+ * 层级格式：每行一层。
+ * - 第 1 行只有根。
+ * - 之后每行按上一层的节点顺序，用 `|` 把孩子分组，每组最多两个值（左 右），空位写 `_`；
+ *   组数必须等于上一层节点数（上一层每个节点一组，叶子写空组或 `_`）。
+ * - 不写 `|` 时，值的个数必须正好是上一层节点数的 2 倍（上一层只有 1 个节点时可以只写 1 个）。
+ */
+export function parseLevels(lines: string[], opts: ParseOptions = {}): TreeNode {
+  const nulls = nullSet(opts);
+  const rows = numberedLines(lines);
+  if (rows.length === 0) throw new TreeError("empty_input");
+
+  const rootTokens = splitTokens(rows[0].text);
+  if (rootTokens.length !== 1) {
+    throw new TreeError("level_multi_root", { line: rows[0].line, actual: rootTokens.length });
+  }
+  if (isNullToken(rootTokens[0], nulls)) throw new TreeError("root_null", { line: rows[0].line });
+  const root = makeNode(rootTokens[0]);
+  let parents: TreeNode[] = [root];
+
+  for (let r = 1; r < rows.length; r++) {
+    const { text, line } = rows[r];
+    if (parents.length === 0) throw new TreeError("level_no_parents", { line });
+    const parentLabels = parents.map((p) => p.label).join(", ");
+
+    let groups: string[][];
+    if (text.includes("|")) {
+      groups = text.split("|").map(splitTokens);
+      if (groups.length !== parents.length) {
+        throw new TreeError("level_group_count", { line, expected: parents.length, actual: groups.length, parents: parentLabels });
+      }
+    } else {
+      const tokens = splitTokens(text);
+      if (parents.length === 1) {
+        groups = [tokens];
+      } else {
+        if (tokens.length !== parents.length * 2) {
+          throw new TreeError("level_token_count", { line, expected: parents.length, actual: tokens.length, parents: parentLabels });
+        }
+        groups = [];
+        for (let i = 0; i < tokens.length; i += 2) groups.push(tokens.slice(i, i + 2));
+      }
+    }
+
+    const next: TreeNode[] = [];
+    groups.forEach((g, gi) => {
+      const parent = parents[gi];
+      if (g.length > 2) {
+        throw new TreeError("level_group_size", { line, group: gi + 1, label: parent.label, actual: g.length });
+      }
+      const [l, rt] = g;
+      if (l !== undefined && !isNullToken(l, nulls)) {
+        parent.left = makeNode(l);
+        next.push(parent.left);
+      }
+      if (rt !== undefined && !isNullToken(rt, nulls)) {
+        parent.right = makeNode(rt);
+        next.push(parent.right);
+      }
+    });
+    parents = next;
+  }
+  return root;
+}
+
+/**
+ * 父子格式：每行 `父节点: 左 右`，只写有孩子的节点。
+ * - 第 1 行的父节点是根。
+ * - 之后每行的父节点必须已经在前面某行里作为孩子出现过。
+ * - 同名节点按出现顺序取第一个还没指定过孩子的。
+ * - 只有右孩子写 `父: _ 右`；只有左孩子写 `父: 左`。
+ */
+export function parseEdges(lines: string[], opts: ParseOptions = {}): TreeNode {
+  const nulls = nullSet(opts);
+  const rows = numberedLines(lines);
+  if (rows.length === 0) throw new TreeError("empty_input");
+
+  let root: TreeNode | null = null;
+  const order: TreeNode[] = []; // 节点出现顺序
+  const assigned = new Set<TreeNode>();
+
+  for (const { text, line } of rows) {
+    const m = text.match(EDGE);
+    if (!m) throw new TreeError("edge_no_colon", { line });
+    const label = unquote(m[1].trim());
+    if (label === "") throw new TreeError("edge_no_parent_label", { line });
+    const kids = splitTokens(m[2]);
+    if (kids.length > 2) throw new TreeError("edge_children_count", { line, label, actual: kids.length });
+
+    let parent: TreeNode | undefined;
+    if (!root) {
+      if (isNullToken(label, nulls)) throw new TreeError("root_null", { line });
+      root = makeNode(label);
+      order.push(root);
+      parent = root;
+    } else {
+      parent = order.find((n) => n.label === label && !assigned.has(n));
+      if (!parent) {
+        const code = order.some((n) => n.label === label) ? "edge_parent_taken" : "edge_unknown_parent";
+        throw new TreeError(code, { line, label });
+      }
+    }
+    assigned.add(parent);
+
+    const [l, rt] = kids;
+    if (l !== undefined && !isNullToken(l, nulls)) {
+      parent.left = makeNode(l);
+      order.push(parent.left);
+    }
+    if (rt !== undefined && !isNullToken(rt, nulls)) {
+      parent.right = makeNode(rt);
+      order.push(parent.right);
+    }
+  }
+  return root as TreeNode;
 }
 
 /** 解析缩进列表格式 */

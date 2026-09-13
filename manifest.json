@@ -1,9 +1,9 @@
 {
   "id": "slash-tree",
   "name": "Slash Tree",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "minAppVersion": "1.0.0",
-  "description": "Turn LeetCode-style level-order arrays or indented lists into slash-style (/ \\) binary tree drawings for algorithm notes.",
+  "description": "Turn simple text (one line per level, parent: left right, LeetCode arrays, or indented lists) into slash-style (/ \\) binary tree drawings for algorithm notes.",
   "author": "Tianyi Liu",
   "authorUrl": "https://github.com/AdamLTy",
   "isDesktopOnly": false
