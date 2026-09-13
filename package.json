@@ -1,0 +1,33 @@
+{
+  "name": "obsidian-slash-tree",
+  "version": "1.0.0",
+  "description": "把 LeetCode 层序数组 / 缩进列表快速转换成斜杠风格（/ \\）的二叉树字符画",
+  "main": "main.js",
+  "scripts": {
+    "dev": "node esbuild.config.mjs",
+    "build": "tsc -noEmit -skipLibCheck && node esbuild.config.mjs production",
+    "test": "tsx --test test/*.test.ts",
+    "demo": "tsx scripts/demo.ts"
+  },
+  "keywords": [
+    "obsidian",
+    "plugin",
+    "binary-tree",
+    "leetcode"
+  ],
+  "author": "Tianyi Liu",
+  "license": "MIT",
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "esbuild": "^0.24.0",
+    "obsidian": "latest",
+    "tslib": "^2.6.0",
+    "tsx": "^4.19.0",
+    "typescript": "^5.5.0"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/AdamLTy/obsidian-slash-tree.git"
+  },
+  "homepage": "https://github.com/AdamLTy/obsidian-slash-tree#readme"
+}

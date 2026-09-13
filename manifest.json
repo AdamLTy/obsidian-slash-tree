@@ -1,0 +1,10 @@
+{
+  "id": "slash-tree",
+  "name": "Slash Tree",
+  "version": "1.0.0",
+  "minAppVersion": "1.0.0",
+  "description": "把 LeetCode 层序数组或缩进列表一键转换成 / \\ 斜杠风格的二叉树字符画。",
+  "author": "Tianyi Liu",
+  "isDesktopOnly": false,
+  "authorUrl": "https://github.com/AdamLTy"
+}
