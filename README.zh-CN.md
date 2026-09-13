@@ -81,6 +81,20 @@ Obsidian 插件：把固定格式的文本一键转换成 `/` `\` 斜杠风格�
 
 ## 安装
 
+### 从社区插件库安装
+
+上架后：**设置 → 第三方插件 → 浏览**，搜索 **Slash Tree**，安装并启用。
+
+### 用 BRAT 安装（上架前）
+
+1. 安装 [BRAT](https://obsidian.md/plugins?id=obsidian42-brat) 插件。
+2. 运行 **BRAT: Add a beta plugin for testing**，填入 `AdamLTy/obsidian-slash-tree`。
+3. 在 **设置 → 第三方插件** 里启用 **Slash Tree**。
+
+### 从 release 手动安装
+
+到 [最新 release](https://github.com/AdamLTy/obsidian-slash-tree/releases/latest) 下载 `main.js`、`manifest.json`、`styles.css`，放到 `<vault>/.obsidian/plugins/slash-tree/`，然后启用插件。
+
 ### 从源码安装
 
 ```bash
@@ -90,11 +104,7 @@ npm install
 scripts/install.sh "/path/to/your/vault"
 ```
 
-然后在 Obsidian 中：**设置 → 第三方插件 → 重新加载插件列表 → 启用 Slash Tree**。
-
-### 手动安装
-
-把 `npm run build` 生成的 `main.js`、`manifest.json`、`styles.css` 复制到 `<vault>/.obsidian/plugins/slash-tree/`，然后启用插件。
+插件界面跟随 Obsidian 的语言设置：简体 / 繁体中文时显示中文，其他语言显示英文。
 
 ## 设置项
 

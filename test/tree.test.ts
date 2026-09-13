@@ -1,6 +1,17 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { textToTree, parseTree, renderTree, countNodes, TreeNode, TreeError } from "../src/tree";
+import {
+  textToTree,
+  parseTree,
+  renderTree,
+  countNodes,
+  formatTreeError,
+  TreeNode,
+  TreeError,
+  TreeErrorCode,
+  TreeErrorParams,
+} from "../src/tree";
+import { TREE_ERROR_MESSAGES } from "../src/i18n";
 
 const t = (s: string, o?: Parameters<typeof textToTree>[1]) => textToTree(s, o);
 const lines = (...ls: string[]) => ls.join("\n");
@@ -74,14 +85,35 @@ test("整段是代码块时自动去围栏", () => {
   assert.equal(t("~~~\n1\n  2\n  3\n~~~"), t("[1,2,3]"));
 });
 
-test("错误提示", () => {
-  assert.throws(() => t(""), /输入为空/);
-  assert.throws(() => t("[null,1]"), /根节点不能为空/);
-  assert.throws(() => t("[1,null,null,2]"), /没有父节点/);
-  assert.throws(() => t("1\n  2\n  3\n  4"), /最多两个/);
-  assert.throws(() => t("1\n2"), /只能有一个根节点/);
-  assert.throws(() => t("1\n  R: 2\n  R: 3"), /已经存在/);
-  assert.throws(() => t("1\n  null\n    2"), /空节点下面不能再挂孩子/);
+const throwsCode = (fn: () => unknown, code: TreeErrorCode, params?: Partial<TreeErrorParams>) =>
+  assert.throws(fn, (e: unknown) => {
+    assert.ok(e instanceof TreeError, "should be TreeError");
+    assert.equal(e.code, code);
+    if (params) for (const [k, v] of Object.entries(params)) assert.equal(e.params[k as keyof TreeErrorParams], v);
+    return true;
+  });
+
+test("错误码与参数", () => {
+  throwsCode(() => t(""), "empty_input");
+  throwsCode(() => t("[null,1]"), "root_null");
+  throwsCode(() => t("[1,null,null,2]"), "orphan_value", { index: 4, value: "2" });
+  throwsCode(() => t("[1,null,2,3]", { levelOrderMode: "heap" }), "heap_null_parent", { index: 4, parentIndex: 2 });
+  throwsCode(() => t("1\n  2\n  3\n  4"), "too_many_children", { line: 4, label: "1" });
+  throwsCode(() => t("1\n2"), "multiple_roots", { line: 2 });
+  throwsCode(() => t("1\n  R: 2\n  R: 3"), "side_taken", { line: 3, side: "R" });
+  throwsCode(() => t("1\n  null\n    2"), "placeholder_child", { line: 3 });
+  throwsCode(() => t("null\n  1"), "root_null", { line: 1 });
+});
+
+test("错误信息：英文默认 message，中文模板可翻译", () => {
+  try {
+    t("1\n  2\n  3\n  4");
+    assert.fail("should throw");
+  } catch (e) {
+    assert.ok(e instanceof TreeError);
+    assert.match(e.message, /^Line 4: "1" already has two children/);
+    assert.match(formatTreeError(e, TREE_ERROR_MESSAGES.zh), /^第 4 行：「1」已经有两个孩子/);
+  }
 });
 
 test("minGap 设置拉开子树间距", () => {

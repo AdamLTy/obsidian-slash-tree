@@ -1,13 +1,14 @@
 {
   "name": "obsidian-slash-tree",
   "version": "1.0.0",
-  "description": "把 LeetCode 层序数组 / 缩进列表快速转换成斜杠风格（/ \\）的二叉树字符画",
+  "description": "Obsidian plugin: turn LeetCode-style level-order arrays or indented lists into slash-style (/ \\) binary tree drawings",
   "main": "main.js",
   "scripts": {
     "dev": "node esbuild.config.mjs",
     "build": "tsc -noEmit -skipLibCheck && node esbuild.config.mjs production",
     "test": "tsx --test test/*.test.ts",
-    "demo": "tsx scripts/demo.ts"
+    "demo": "tsx scripts/demo.ts",
+    "version": "node version-bump.mjs && git add manifest.json versions.json"
   },
   "keywords": [
     "obsidian",

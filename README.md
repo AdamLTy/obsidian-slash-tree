@@ -81,6 +81,20 @@ More output samples:
 
 ## Installation
 
+### From the community plugin browser
+
+Once the plugin is listed: **Settings → Community plugins → Browse**, search for **Slash Tree**, install and enable it.
+
+### With BRAT (before it is listed)
+
+1. Install the [BRAT](https://obsidian.md/plugins?id=obsidian42-brat) plugin.
+2. Run **BRAT: Add a beta plugin for testing** and enter `AdamLTy/obsidian-slash-tree`.
+3. Enable **Slash Tree** in **Settings → Community plugins**.
+
+### Manually from a release
+
+Download `main.js`, `manifest.json` and `styles.css` from the [latest release](https://github.com/AdamLTy/obsidian-slash-tree/releases/latest), put them in `<vault>/.obsidian/plugins/slash-tree/`, then enable the plugin.
+
 ### From source
 
 ```bash
@@ -90,11 +104,7 @@ npm install
 scripts/install.sh "/path/to/your/vault"
 ```
 
-Then in Obsidian: **Settings → Community plugins → Reload plugins → enable Slash Tree**.
-
-### Manually
-
-Copy `main.js`, `manifest.json` and `styles.css` (from `npm run build`) into `<vault>/.obsidian/plugins/slash-tree/` and enable the plugin.
+The plugin UI follows Obsidian's interface language: Chinese when Obsidian is set to 简体中文 / 繁體中文, English otherwise.
 
 ## Settings
 

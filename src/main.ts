@@ -1,5 +1,6 @@
 import { App, Editor, Modal, Notice, Plugin, PluginSettingTab, Setting } from "obsidian";
-import { DEFAULT_NULL_TOKENS, LevelOrderMode, TreeError, textToTree } from "./tree";
+import { DEFAULT_NULL_TOKENS, LevelOrderMode, TreeError, formatTreeError, textToTree } from "./tree";
+import { Lang, STRINGS, Strings, TREE_ERROR_MESSAGES, detectLang } from "./i18n";
 
 interface SlashTreeSettings {
   minGap: number;
@@ -17,28 +18,27 @@ const DEFAULT_SETTINGS: SlashTreeSettings = {
   outputFenceLanguage: "",
 };
 
-function errorMessage(e: unknown): string {
-  if (e instanceof TreeError) return e.message;
-  return e instanceof Error ? e.message : String(e);
-}
-
 export default class SlashTreePlugin extends Plugin {
   settings: SlashTreeSettings = { ...DEFAULT_SETTINGS };
+  lang: Lang = "en";
+  t: Strings = STRINGS.en;
 
   async onload(): Promise<void> {
     await this.loadSettings();
+    this.lang = detectLang();
+    this.t = STRINGS[this.lang];
 
     // 命令 1：把选中文本（或光标所在行）原地替换成斜杠树
     this.addCommand({
       id: "convert-selection",
-      name: "把选中文本转换为斜杠树",
+      name: this.t.cmdConvert,
       editorCallback: (editor) => this.convertSelection(editor),
     });
 
     // 命令 2：弹窗输入 + 实时预览，再插入到光标处
     this.addCommand({
       id: "insert-from-modal",
-      name: "输入并插入斜杠树…",
+      name: this.t.cmdInsert,
       editorCallback: (editor) => {
         new TreeInputModal(this, (tree) => {
           const cursor = editor.getCursor();
@@ -58,7 +58,7 @@ export default class SlashTreePlugin extends Plugin {
         if (!editor.getSelection()) return;
         menu.addItem((item) =>
           item
-            .setTitle("转换为斜杠树")
+            .setTitle(this.t.menuConvert)
             .setIcon("git-fork")
             .onClick(() => this.convertSelection(editor))
         );
@@ -85,6 +85,11 @@ export default class SlashTreePlugin extends Plugin {
     });
   }
 
+  errorMessage(e: unknown): string {
+    if (e instanceof TreeError) return formatTreeError(e, TREE_ERROR_MESSAGES[this.lang]);
+    return e instanceof Error ? e.message : String(e);
+  }
+
   wrapInFence(tree: string): string {
     const lang = this.settings.outputFenceLanguage.trim();
     return "```" + lang + "\n" + tree + "\n```";
@@ -95,7 +100,7 @@ export default class SlashTreePlugin extends Plugin {
     const cursor = editor.getCursor();
     const text = selection || editor.getLine(cursor.line);
     if (!text.trim()) {
-      new Notice("请先选中要转换的文本，或把光标放在数组那一行");
+      new Notice(this.t.noticeSelectFirst);
       return;
     }
 
@@ -103,7 +108,7 @@ export default class SlashTreePlugin extends Plugin {
     try {
       tree = this.convert(text);
     } catch (e) {
-      new Notice("斜杠树：" + errorMessage(e), 6000);
+      new Notice(this.t.errorPrefix + this.errorMessage(e), 6000);
       return;
     }
 
@@ -120,15 +125,15 @@ export default class SlashTreePlugin extends Plugin {
     try {
       tree = this.convert(source);
     } catch (e) {
-      el.createDiv({ cls: "slash-tree-error", text: "斜杠树：" + errorMessage(e) });
+      el.createDiv({ cls: "slash-tree-error", text: this.t.errorPrefix + this.errorMessage(e) });
       return;
     }
     const wrapper = el.createDiv({ cls: "slash-tree" });
     wrapper.createEl("pre", { cls: "slash-tree-pre", text: tree });
-    const copy = wrapper.createEl("button", { cls: "slash-tree-copy", text: "复制" });
+    const copy = wrapper.createEl("button", { cls: "slash-tree-copy", text: this.t.copy });
     copy.addEventListener("click", async () => {
       await navigator.clipboard.writeText(tree);
-      new Notice("已复制斜杠树");
+      new Notice(this.t.noticeCopied);
     });
   }
 }
@@ -142,15 +147,13 @@ class TreeInputModal extends Modal {
 
   onOpen(): void {
     const { contentEl } = this;
+    const t = this.plugin.t;
+    this.titleEl.setText(t.modalTitle);
     contentEl.addClass("slash-tree-modal");
-    contentEl.createEl("h3", { text: "生成斜杠树" });
 
     const input = contentEl.createEl("textarea", {
       cls: "slash-tree-input",
-      attr: {
-        rows: "7",
-        placeholder: "层序数组：[3,9,20,null,null,15,7]\n\n或缩进列表：\n1\n  2\n    4\n    5\n  3",
-      },
+      attr: { rows: "7", placeholder: t.modalPlaceholder },
     });
     const preview = contentEl.createEl("pre", { cls: "slash-tree-pre slash-tree-preview" });
     const error = contentEl.createDiv({ cls: "slash-tree-error" });
@@ -164,7 +167,7 @@ class TreeInputModal extends Modal {
       } catch (e) {
         this.tree = "";
         preview.setText("");
-        error.setText(errorMessage(e));
+        error.setText(this.plugin.errorMessage(e));
       }
     };
     input.addEventListener("input", update);
@@ -176,13 +179,13 @@ class TreeInputModal extends Modal {
     });
 
     const buttons = contentEl.createDiv({ cls: "slash-tree-buttons" });
-    const copy = buttons.createEl("button", { text: "复制" });
+    const copy = buttons.createEl("button", { text: t.copy });
     copy.addEventListener("click", async () => {
       if (!this.tree) return;
       await navigator.clipboard.writeText(this.tree);
-      new Notice("已复制斜杠树");
+      new Notice(t.noticeCopied);
     });
-    const insert = buttons.createEl("button", { text: "插入到光标处（⌘/Ctrl+Enter）", cls: "mod-cta" });
+    const insert = buttons.createEl("button", { text: t.insertButton, cls: "mod-cta" });
     insert.addEventListener("click", () => this.insert());
 
     input.focus();
@@ -190,7 +193,7 @@ class TreeInputModal extends Modal {
 
   private insert(): void {
     if (!this.tree) {
-      new Notice("还没有可插入的树，请先输入正确的格式");
+      new Notice(this.plugin.t.noticeNothingToInsert);
       return;
     }
     this.onInsert(this.tree);
@@ -211,12 +214,13 @@ class SlashTreeSettingTab extends PluginSettingTab {
     const { containerEl } = this;
     containerEl.empty();
     const s = this.plugin.settings;
+    const t = this.plugin.t;
 
     new Setting(containerEl)
-      .setName("子树最小间距")
-      .setDesc("相邻两棵子树之间至少留几列空格，越大越疏松（默认 1）。")
-      .addText((t) =>
-        t.setValue(String(s.minGap)).onChange(async (v) => {
+      .setName(t.gapName)
+      .setDesc(t.gapDesc)
+      .addText((text) =>
+        text.setValue(String(s.minGap)).onChange(async (v) => {
           const n = parseInt(v, 10);
           if (!Number.isNaN(n) && n >= 1) {
             s.minGap = n;
@@ -226,22 +230,22 @@ class SlashTreeSettingTab extends PluginSettingTab {
       );
 
     new Setting(containerEl)
-      .setName("空节点写法")
-      .setDesc("用逗号分隔，不区分大小写；空字符串永远视为空节点。")
-      .addText((t) =>
-        t.setValue(s.nullTokens).onChange(async (v) => {
+      .setName(t.nullName)
+      .setDesc(t.nullDesc)
+      .addText((text) =>
+        text.setValue(s.nullTokens).onChange(async (v) => {
           s.nullTokens = v;
           await this.plugin.saveSettings();
         })
       );
 
     new Setting(containerEl)
-      .setName("层序数组的解释方式")
-      .setDesc("LeetCode：空节点不占用子节点位置。堆式：下标 i 的孩子固定是 2i+1、2i+2。")
+      .setName(t.modeName)
+      .setDesc(t.modeDesc)
       .addDropdown((d) =>
         d
-          .addOption("leetcode", "LeetCode")
-          .addOption("heap", "堆式（完全二叉树下标）")
+          .addOption("leetcode", t.modeLeetcode)
+          .addOption("heap", t.modeHeap)
           .setValue(s.levelOrderMode)
           .onChange(async (v) => {
             s.levelOrderMode = v as LevelOrderMode;
@@ -250,20 +254,20 @@ class SlashTreeSettingTab extends PluginSettingTab {
       );
 
     new Setting(containerEl)
-      .setName("自动渲染的代码块语言")
-      .setDesc("``` 后面写这个标记，块里的源格式会在阅读视图 / 实时预览中自动渲染成树。修改后需重新加载插件。")
-      .addText((t) =>
-        t.setValue(s.codeBlockLanguage).onChange(async (v) => {
+      .setName(t.blockLangName)
+      .setDesc(t.blockLangDesc)
+      .addText((text) =>
+        text.setValue(s.codeBlockLanguage).onChange(async (v) => {
           s.codeBlockLanguage = v.trim() || "tree";
           await this.plugin.saveSettings();
         })
       );
 
     new Setting(containerEl)
-      .setName("转换输出的代码块语言")
-      .setDesc("“转换为斜杠树”命令输出的 ``` 标记，默认为空。不要和上一项相同，否则渲染出来的树会被当作源格式再次解析。")
-      .addText((t) =>
-        t.setValue(s.outputFenceLanguage).onChange(async (v) => {
+      .setName(t.outLangName)
+      .setDesc(t.outLangDesc)
+      .addText((text) =>
+        text.setValue(s.outputFenceLanguage).onChange(async (v) => {
           s.outputFenceLanguage = v.trim();
           await this.plugin.saveSettings();
         })

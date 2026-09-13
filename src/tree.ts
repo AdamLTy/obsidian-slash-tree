@@ -1,6 +1,6 @@
 /**
  * 斜杠树核心：把文本解析成二叉树，再渲染成 / \ 风格的字符画。
- * 这个文件不依赖 Obsidian，可以单独测试。
+ * 这个文件不依赖 Obsidian，可以单独测试和复用。
  */
 
 export interface TreeNode {
@@ -9,11 +9,57 @@ export interface TreeNode {
   right: TreeNode | null;
 }
 
+// ---------------------------------------------------------------------------
+// 错误：带错误码 + 参数，方便在 UI 层翻译
+// ---------------------------------------------------------------------------
+
+export type TreeErrorCode =
+  | "empty_input"
+  | "root_null"
+  | "orphan_value"
+  | "heap_null_parent"
+  | "placeholder_child"
+  | "multiple_roots"
+  | "side_taken"
+  | "too_many_children";
+
+export interface TreeErrorParams {
+  line?: number;
+  index?: number;
+  value?: string;
+  parentIndex?: number;
+  label?: string;
+  side?: "L" | "R";
+}
+
+export type TreeErrorMessages = Record<TreeErrorCode, (p: TreeErrorParams) => string>;
+
+export const TREE_ERROR_MESSAGES_EN: TreeErrorMessages = {
+  empty_input: () => "Input is empty",
+  root_null: (p) => (p.line ? `Line ${p.line}: the` : "The") + " root node cannot be empty",
+  orphan_value: (p) => `Value #${p.index} (${p.value}) has no parent to attach to`,
+  heap_null_parent: (p) => `Value #${p.index} (${p.value}): its parent, value #${p.parentIndex}, is empty`,
+  placeholder_child: (p) => `Line ${p.line}: an empty node cannot have children`,
+  multiple_roots: (p) => `Line ${p.line}: only one root is allowed (missing indentation?)`,
+  side_taken: (p) => `Line ${p.line}: "${p.label}" already has a ${p.side === "L" ? "left" : "right"} child`,
+  too_many_children: (p) => `Line ${p.line}: "${p.label}" already has two children; a binary tree allows at most two`,
+};
+
 export class TreeError extends Error {
-  constructor(message: string) {
-    super(message);
+  readonly code: TreeErrorCode;
+  readonly params: TreeErrorParams;
+
+  constructor(code: TreeErrorCode, params: TreeErrorParams = {}) {
+    super(TREE_ERROR_MESSAGES_EN[code](params));
     this.name = "TreeError";
+    this.code = code;
+    this.params = params;
   }
+}
+
+/** 用指定语言的模板格式化错误信息 */
+export function formatTreeError(e: TreeError, messages: TreeErrorMessages = TREE_ERROR_MESSAGES_EN): string {
+  return messages[e.code](e.params);
 }
 
 export type LevelOrderMode = "leetcode" | "heap";
@@ -54,7 +100,7 @@ export function stripFence(text: string): string {
  */
 export function parseTree(input: string, opts: ParseOptions = {}): TreeNode {
   const text = stripFence(input).trim();
-  if (!text) throw new TreeError("输入为空");
+  if (!text) throw new TreeError("empty_input");
 
   const lines = text.split("\n").map((l) => l.replace(/\s+$/, ""));
   const nonBlank = lines.filter((l) => l.trim() !== "");
@@ -99,7 +145,7 @@ export function parseLevelOrder(text: string, opts: ParseOptions = {}): TreeNode
   // 去掉末尾多余的空节点（例如 `[1,2,]`）
   while (tokens.length > 0 && tokens[tokens.length - 1] === null) tokens.pop();
 
-  if (tokens.length === 0 || tokens[0] === null) throw new TreeError("根节点不能为空");
+  if (tokens.length === 0 || tokens[0] === null) throw new TreeError("root_null");
 
   return (opts.levelOrderMode ?? "leetcode") === "heap" ? buildHeap(tokens) : buildLeetCode(tokens);
 }
@@ -124,7 +170,7 @@ function buildLeetCode(tokens: (string | null)[]): TreeNode {
     }
   }
   if (i < tokens.length) {
-    throw new TreeError(`第 ${i + 1} 个值「${tokens[i]}」没有父节点可以挂载`);
+    throw new TreeError("orphan_value", { index: i + 1, value: tokens[i] ?? "" });
   }
   return root;
 }
@@ -134,9 +180,10 @@ function buildHeap(tokens: (string | null)[]): TreeNode {
   for (let i = 1; i < nodes.length; i++) {
     const node = nodes[i];
     if (!node) continue;
-    const parent = nodes[(i - 1) >> 1];
+    const parentIndex = (i - 1) >> 1;
+    const parent = nodes[parentIndex];
     if (!parent) {
-      throw new TreeError(`第 ${i + 1} 个值「${node.label}」的父节点（第 ${((i - 1) >> 1) + 1} 个）是空节点`);
+      throw new TreeError("heap_null_parent", { index: i + 1, value: node.label, parentIndex: parentIndex + 1 });
     }
     if (i % 2 === 1) parent.left = node;
     else parent.right = node;
@@ -163,7 +210,7 @@ export function parseOutline(lines: string[], opts: ParseOptions = {}): TreeNode
   for (let idx = 0; idx < lines.length; idx++) {
     const rawLine = lines[idx].replace(/\t/g, "    ");
     if (rawLine.trim() === "") continue;
-    const lineNo = idx + 1;
+    const line = idx + 1;
 
     const indent = rawLine.length - rawLine.trimStart().length;
     let content = rawLine.trim().replace(BULLET, "");
@@ -177,15 +224,15 @@ export function parseOutline(lines: string[], opts: ParseOptions = {}): TreeNode
     const isPlaceholder = isNullToken(label, nulls);
 
     if (placeholderIndent >= 0 && indent > placeholderIndent) {
-      throw new TreeError(`第 ${lineNo} 行：空节点下面不能再挂孩子`);
+      throw new TreeError("placeholder_child", { line });
     }
     placeholderIndent = -1;
 
     while (stack.length > 0 && stack[stack.length - 1].indent >= indent) stack.pop();
 
     if (stack.length === 0) {
-      if (root) throw new TreeError(`第 ${lineNo} 行：只能有一个根节点（缩进是否少了？）`);
-      if (isPlaceholder) throw new TreeError(`第 ${lineNo} 行：根节点不能为空`);
+      if (root) throw new TreeError("multiple_roots", { line });
+      if (isPlaceholder) throw new TreeError("root_null", { line });
       root = makeNode(label);
       stack.push({ indent, node: root, used: { L: false, R: false } });
       continue;
@@ -194,14 +241,14 @@ export function parseOutline(lines: string[], opts: ParseOptions = {}): TreeNode
     const parent = stack[stack.length - 1];
     let slot: "L" | "R";
     if (side) {
-      if (parent.used[side]) throw new TreeError(`第 ${lineNo} 行：「${parent.node.label}」的${side === "L" ? "左" : "右"}孩子已经存在`);
+      if (parent.used[side]) throw new TreeError("side_taken", { line, label: parent.node.label, side });
       slot = side;
     } else if (!parent.used.L) {
       slot = "L";
     } else if (!parent.used.R) {
       slot = "R";
     } else {
-      throw new TreeError(`第 ${lineNo} 行：「${parent.node.label}」已经有两个孩子了，二叉树最多两个`);
+      throw new TreeError("too_many_children", { line, label: parent.node.label });
     }
     parent.used[slot] = true;
 
@@ -215,7 +262,7 @@ export function parseOutline(lines: string[], opts: ParseOptions = {}): TreeNode
     stack.push({ indent, node, used: { L: false, R: false } });
   }
 
-  if (!root) throw new TreeError("输入为空");
+  if (!root) throw new TreeError("empty_input");
   return root;
 }
 
@@ -237,7 +284,7 @@ interface Layout {
 
 // 东亚宽字符、常见 emoji：在等宽字体里占两列
 const WIDE =
-  /[\u1100-\u115F\u2E80-\u303E\u3041-\u33FF\u3400-\u4DBF\u4E00-\u9FFF\uA000-\uA4CF\uAC00-\uD7A3\uF900-\uFAFF\uFE30-\uFE4F\uFF00-\uFF60\uFFE0-\uFFE6\u{1F300}-\u{1F64F}\u{1F900}-\u{1F9FF}\u{20000}-\u{3FFFD}]/u;
+  /[ᄀ-ᅟ⺀-〾ぁ-㏿㐀-䶿一-鿿ꀀ-꓏가-힣豈-﫿︰-﹏＀-｠￠-￦\u{1F300}-\u{1F64F}\u{1F900}-\u{1F9FF}\u{20000}-\u{3FFFD}]/u;
 
 function toCells(label: string): Row {
   const cells: Row = [];
@@ -385,7 +432,7 @@ export function textToTree(input: string, opts: ParseOptions & RenderOptions = {
   return renderTree(parseTree(input, opts), opts);
 }
 
-/** 统计节点数（用于提示） */
+/** 统计节点数 */
 export function countNodes(node: TreeNode | null): number {
   return node ? 1 + countNodes(node.left) + countNodes(node.right) : 0;
 }
